@@ -1,0 +1,5 @@
+.codex-project-id
+.build/
+.cache/
+config/app.env
+
