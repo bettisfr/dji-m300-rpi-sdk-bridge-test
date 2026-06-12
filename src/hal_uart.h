@@ -19,5 +19,8 @@ T_DjiReturnCode HalUart_ReadData(
     uint32_t len,
     uint32_t *realLen);
 T_DjiReturnCode HalUart_GetStatus(E_DjiHalUartNum uartNum, T_DjiUartStatus *status);
+#ifdef DJI_UART_HAS_DEVICE_INFO
+T_DjiReturnCode HalUart_GetDeviceInfo(T_DjiHalUartDeviceInfo *deviceInfo);
+#endif
 
 #endif

@@ -2,9 +2,9 @@
 set -euo pipefail
 
 readonly ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-readonly SDK_TAG="3.8.1"
-readonly SDK_DIR="${ROOT_DIR}/.cache/Payload-SDK"
-readonly BUILD_DIR="${ROOT_DIR}/.build"
+readonly SDK_TAG="${DJI_PSDK_VERSION:-3.9.2}"
+readonly SDK_DIR="${ROOT_DIR}/.cache/Payload-SDK-${SDK_TAG}"
+readonly BUILD_DIR="${ROOT_DIR}/.build/${SDK_TAG}"
 readonly APP_ENV="${ROOT_DIR}/config/app.env"
 readonly GENERATED_DIR="${BUILD_DIR}/generated"
 
@@ -17,6 +17,8 @@ set -a
 # shellcheck disable=SC1090
 source "${APP_ENV}"
 set +a
+
+DJI_UART_SECONDARY_DEVICE="${DJI_UART_SECONDARY_DEVICE:-/dev/ttyACM0}"
 
 required=(
   DJI_APP_NAME
@@ -40,7 +42,11 @@ if [[ ! -d "${SDK_DIR}/.git" ]]; then
   mkdir -p "$(dirname "${SDK_DIR}")"
   git clone --branch "${SDK_TAG}" --depth 1 \
     https://github.com/dji-sdk/Payload-SDK.git "${SDK_DIR}"
+else
+  git -C "${SDK_DIR}" fetch --depth 1 origin "refs/tags/${SDK_TAG}:refs/tags/${SDK_TAG}"
 fi
+
+git -C "${SDK_DIR}" reset --hard "${SDK_TAG}" >/dev/null
 
 escape_c_string() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
@@ -58,6 +64,7 @@ cat >"${GENERATED_DIR}/dji_sdk_app_info.h" <<EOF
 #define USER_DEVELOPER_ACCOUNT "$(escape_c_string "${DJI_DEVELOPER_ACCOUNT}")"
 #define USER_BAUD_RATE "$(escape_c_string "${DJI_BAUD_RATE}")"
 #define USER_UART_DEVICE "$(escape_c_string "${DJI_UART_DEVICE}")"
+#define USER_UART_SECONDARY_DEVICE "$(escape_c_string "${DJI_UART_SECONDARY_DEVICE}")"
 #define USER_AIRCRAFT_FIRMWARE "$(escape_c_string "${DJI_AIRCRAFT_FIRMWARE}")"
 
 #endif
@@ -68,4 +75,4 @@ cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}" \
   -DDJI_PSDK_DIR="${SDK_DIR}"
 cmake --build "${BUILD_DIR}" --parallel "$(nproc)"
 
-echo "Built ${BUILD_DIR}/dji_rpi_telemetry"
+echo "Built PSDK ${SDK_TAG}: ${BUILD_DIR}/dji_rpi_telemetry"

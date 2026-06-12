@@ -21,10 +21,17 @@ set(DJI_LINUX_COMMON
 
 add_executable(dji_rpi_telemetry
     src/main.c
+    src/gimbal_control.c
     src/telemetry.c
     src/hal_uart.c
     "${DJI_LINUX_COMMON}/osal/osal.c"
     "${DJI_LINUX_COMMON}/osal/osal_fs.c")
+
+file(READ "${DJI_PSDK_DIR}/psdk_lib/include/dji_platform.h" DJI_PLATFORM_HEADER)
+string(FIND "${DJI_PLATFORM_HEADER}" "UartGetDeviceInfo" DJI_UART_DEVICE_INFO_POSITION)
+if(NOT DJI_UART_DEVICE_INFO_POSITION EQUAL -1)
+    target_compile_definitions(dji_rpi_telemetry PRIVATE DJI_UART_HAS_DEVICE_INFO)
+endif()
 
 target_compile_definitions(dji_rpi_telemetry PRIVATE
     _GNU_SOURCE

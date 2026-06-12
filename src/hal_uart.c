@@ -35,10 +35,18 @@ T_DjiReturnCode HalUart_Init(
     T_DjiUartHandle *uartHandle)
 {
     T_UartHandle *handle;
+    const char *device;
     struct termios options;
     speed_t speed;
 
-    if (uartNum != DJI_HAL_UART_NUM_0 || uartHandle == NULL) {
+    if (uartHandle == NULL) {
+        return DJI_ERROR_SYSTEM_MODULE_CODE_INVALID_PARAMETER;
+    }
+    if (uartNum == DJI_HAL_UART_NUM_0) {
+        device = USER_UART_DEVICE;
+    } else if (uartNum == DJI_HAL_UART_NUM_1) {
+        device = USER_UART_SECONDARY_DEVICE;
+    } else {
         return DJI_ERROR_SYSTEM_MODULE_CODE_INVALID_PARAMETER;
     }
 
@@ -52,7 +60,7 @@ T_DjiReturnCode HalUart_Init(
         return DJI_ERROR_SYSTEM_MODULE_CODE_MEMORY_ALLOC_FAILED;
     }
 
-    handle->fd = open(USER_UART_DEVICE, O_RDWR | O_NOCTTY);
+    handle->fd = open(device, O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (handle->fd < 0 || tcgetattr(handle->fd, &options) != 0) {
         goto error;
     }
@@ -138,6 +146,24 @@ T_DjiReturnCode HalUart_GetStatus(E_DjiHalUartNum uartNum, T_DjiUartStatus *stat
     if (status == NULL) {
         return DJI_ERROR_SYSTEM_MODULE_CODE_INVALID_PARAMETER;
     }
-    status->isConnect = uartNum == DJI_HAL_UART_NUM_0 && access(USER_UART_DEVICE, F_OK) == 0;
+    if (uartNum == DJI_HAL_UART_NUM_0) {
+        status->isConnect = access(USER_UART_DEVICE, F_OK) == 0;
+    } else if (uartNum == DJI_HAL_UART_NUM_1) {
+        status->isConnect = access(USER_UART_SECONDARY_DEVICE, F_OK) == 0;
+    } else {
+        status->isConnect = false;
+    }
     return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
 }
+
+#ifdef DJI_UART_HAS_DEVICE_INFO
+T_DjiReturnCode HalUart_GetDeviceInfo(T_DjiHalUartDeviceInfo *deviceInfo)
+{
+    if (deviceInfo == NULL) {
+        return DJI_ERROR_SYSTEM_MODULE_CODE_INVALID_PARAMETER;
+    }
+    deviceInfo->vid = 0x10C4;
+    deviceInfo->pid = 0xEA60;
+    return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
+}
+#endif
