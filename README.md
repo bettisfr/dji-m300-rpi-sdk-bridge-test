@@ -46,7 +46,7 @@ E-Port Developer Kit
     +-- UART RXD ----> CP2102 TXD
     +-- UART GND ----> CP2102 GND
     |
-    +-- PAYLOAD USB-C/data ---> Raspberry Pi USB-A host port
+    +-- DEVICE USB-C/data ----> Raspberry Pi USB-A host port
     |                           using a USB-A to USB-C data cable
     |
     +-- central yellow XT30 --> DJI XT30 to USB-C power cable
@@ -63,10 +63,10 @@ Important details:
 - Do not connect the E-Port `5V0` or `3V3` pins to the adapter or Raspberry Pi.
 - Set the E-Port USB selector to the **Device** position for the M300 OSDK
   connection. The Raspberry Pi acts as USB host.
-- The cable from the E-Port `PAYLOAD` USB-C port must carry data. A charge-only
+- The cable from the E-Port `DEVICE` USB-C port must carry data. A charge-only
   cable is insufficient.
 - Since the Raspberry Pi 5 has one USB-C port, reserve it for power and connect
-  the E-Port `PAYLOAD` data port to a USB-A port with a USB-A to USB-C data
+  the E-Port `DEVICE` data port to a USB-A port with a USB-A to USB-C data
   cable.
 - In the verified setup, the Pi is powered from the E-Port's central yellow
   XT30 power output using the DJI `XT30 to USB-C Power Cable`.
