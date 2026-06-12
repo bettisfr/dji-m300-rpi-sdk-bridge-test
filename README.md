@@ -18,7 +18,7 @@ Use **Payload SDK 3.9.2** for this M300 configuration.
 
 | PSDK | Verified result |
 | --- | --- |
-| 3.9.2 | Telemetry and gimbal control work |
+| 3.9.2 | Telemetry, gimbal control, H20 photo capture, and media download work |
 | 3.8.1 | Telemetry works |
 | 3.13.1 | Core starts, but telemetry subscriptions are rejected |
 | 3.16.0 | `DjiCore_Init` fails with `Unknown mount position type` |
@@ -96,8 +96,9 @@ lsusb
 Both serial devices must exist. The DJI USB device used during testing appeared
 as vendor/product `2ca3:001f`, and the CP2102 as `10c4:ea60`.
 
-The application does not need `sudo` when the user can access both serial
-devices. Check membership with:
+Telemetry, gimbal control, and commands that only use the serial transports do
+not need `sudo` when the user can access both serial devices. Check membership
+with:
 
 ```bash
 groups
@@ -267,6 +268,110 @@ For a one-shot absolute pitch target:
 This command reads the current pitch, calculates the required relative
 movement, and finishes at the requested pitch target.
 
+## Camera Control
+
+The camera commands target the H20 mounted on payload position 1.
+
+To take one photo and leave it on the H20 storage:
+
+```bash
+./scripts/shoot_photo.sh
+```
+
+The command identifies the camera, switches it to single-photo mode, and sends
+one shutter command.
+
+To take one photo and download the newest media file to the Raspberry Pi:
+
+```bash
+sudo ./scripts/shoot_and_download.sh
+```
+
+The default destination is:
+
+```text
+~/dji-rpi/photos/
+```
+
+A different destination can be passed as the first argument:
+
+```bash
+sudo ./scripts/shoot_and_download.sh /path/to/output
+```
+
+The complete verified sequence is:
+
+1. initialize the H20 camera manager;
+2. select single-photo mode;
+3. trigger the shutter;
+4. wait for the H20 to store the image;
+5. obtain downloader rights;
+6. request the camera media list;
+7. select the file with the highest media index;
+8. download it over the E-Port USB Bulk channel.
+
+On the tested M300/E-Port connection, PSDK 3.9.2 selected USB device
+`2ca3:001f`, interface `3`, endpoint `0x84` IN, and endpoint `0x03` OUT. These
+values are supplied by PSDK to the USB HAL and are not hard-coded by the
+application.
+
+Media download uses `libusb`, installed by `scripts/setup.sh`. With the default
+Raspberry Pi USB-device permissions, opening the DJI Bulk interface requires
+root, hence `sudo` for `shoot_and_download.sh`. The serial-only commands do not
+require root when the user belongs to `dialout`.
+
+The downloaded files are ignored by Git through the `photos/` entry in
+`.gitignore`. The verified H20 output was a JPEG with EXIF metadata at
+`5184x3888`.
+
+## YOLO Benchmark
+
+The benchmark uses the existing Python environment at `~/pyenv` and compares
+the official COCO-pretrained YOLO11 detection models `n`, `s`, `m`, and `l` on
+the same H20 image.
+
+Run it with:
+
+```bash
+./scripts/benchmark_yolo.sh
+```
+
+By default, the script selects the newest JPEG in `photos/`, uses a `640x640`
+inference size, performs one warm-up and five measured runs per model, and
+writes results to:
+
+```text
+yolo-benchmark/results.json
+yolo-benchmark/results.csv
+yolo-benchmark/yolo11*-annotated.jpg
+```
+
+An explicit image and output directory can be supplied:
+
+```bash
+./scripts/benchmark_yolo.sh /path/to/photo.jpg /path/to/results
+```
+
+The measured wall time includes image loading, resize/preprocessing, model
+inference, and postprocessing. The separate `inference_mean_ms` field reports
+the model execution time measured by Ultralytics. Model loading and the warm-up
+are reported separately and are excluded from the averages.
+
+The initial verified Raspberry Pi 5 CPU results at input size `640`, using four
+PyTorch threads and five runs, were:
+
+| Model | Mean wall time | Mean inference | Approx. rate |
+| --- | ---: | ---: | ---: |
+| YOLO11n | 473 ms | 290 ms | 2.11 images/s |
+| YOLO11s | 959 ms | 773 ms | 1.04 images/s |
+| YOLO11m | 2448 ms | 2262 ms | 0.41 images/s |
+| YOLO11l | 3020 ms | 2835 ms | 0.33 images/s |
+
+The test completed at `53.2 C`, with no swap usage and
+`vcgencmd get_throttled` equal to `0x0`. Zero detections on a test image means
+that the generic COCO model did not recognize a supported class in that scene;
+it does not indicate an inference failure.
+
 ## PSDK 3.9.2 Shutdown Note
 
 With the M300 dual-UART connection, `DjiCore_DeInit()` in PSDK 3.9.2 races the
@@ -304,16 +409,33 @@ The sample only works with `sudo`:
 
 - inspect permissions with `ls -l /dev/ttyUSB0 /dev/ttyACM0`;
 - add the user to `dialout`;
-- do not run this application as root when the serial permissions are correct.
+- serial-only commands should not need root when permissions are correct;
+- camera media download may still require `sudo` to claim the DJI USB Bulk
+  interface.
+
+Photo capture succeeds but download reports `Usb bulk and socket handler is
+null`:
+
+- rebuild the current application, which registers `src/hal_usb_bulk.c`;
+- confirm the E-Port `DEVICE` USB-C data cable is connected to a Pi USB-A port;
+- confirm `lsusb` shows the DJI device;
+- install `libusb-1.0-0-dev` with `scripts/setup.sh`;
+- run `sudo ./scripts/shoot_and_download.sh`.
 
 ## Source Layout
 
 - `src/main.c`: platform setup, PSDK initialization, and CLI dispatch.
 - `src/telemetry.c`: topic subscriptions and CSV telemetry output.
 - `src/gimbal_control.c`: one-shot pitch and interactive three-axis control.
+- `src/camera_control.c`: H20 photo capture, media-list query, and file download.
 - `src/hal_uart.c`: Linux HAL for `/dev/ttyUSB0` and `/dev/ttyACM0`.
+- `src/hal_usb_bulk.c`: libusb transport used for H20 media downloads.
 - `CMakeLists.txt`: minimal executable linked to DJI's precompiled library.
 - `scripts/build.sh`: exact SDK download, private config generation, and build.
 - `scripts/run_telemetry.sh`: telemetry launcher.
 - `scripts/gimbal_console.sh`: interactive gimbal launcher.
 - `scripts/set_gimbal_pitch.sh`: one-shot pitch launcher.
+- `scripts/shoot_photo.sh`: single-photo launcher.
+- `scripts/shoot_and_download.sh`: capture and download the newest H20 photo.
+- `scripts/benchmark_yolo.sh`: benchmark YOLO11 n/s/m/l on an H20 image.
+- `scripts/benchmark_yolo.py`: timed Ultralytics inference and result export.

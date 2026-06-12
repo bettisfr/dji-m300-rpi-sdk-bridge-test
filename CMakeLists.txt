@@ -3,6 +3,8 @@ project(dji_rpi_telemetry C)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(LIBUSB REQUIRED libusb-1.0)
 
 if(NOT DJI_PSDK_DIR)
     message(FATAL_ERROR "Set DJI_PSDK_DIR to the Payload-SDK checkout")
@@ -20,10 +22,12 @@ set(DJI_LINUX_COMMON
     "${DJI_PSDK_DIR}/samples/sample_c/platform/linux/common")
 
 add_executable(dji_rpi_telemetry
+    src/camera_control.c
     src/main.c
     src/gimbal_control.c
     src/telemetry.c
     src/hal_uart.c
+    src/hal_usb_bulk.c
     "${DJI_LINUX_COMMON}/osal/osal.c"
     "${DJI_LINUX_COMMON}/osal/osal_fs.c")
 
@@ -41,9 +45,11 @@ target_include_directories(dji_rpi_telemetry PRIVATE
     src
     "${CMAKE_BINARY_DIR}/generated"
     "${DJI_PSDK_DIR}/psdk_lib/include"
-    "${DJI_LINUX_COMMON}")
+    "${DJI_LINUX_COMMON}"
+    ${LIBUSB_INCLUDE_DIRS})
 
 target_link_libraries(dji_rpi_telemetry PRIVATE
     "${DJI_PSDK_DIR}/psdk_lib/lib/${DJI_TOOLCHAIN_DIR}/libpayloadsdk.a"
+    ${LIBUSB_LIBRARIES}
     pthread
     m)

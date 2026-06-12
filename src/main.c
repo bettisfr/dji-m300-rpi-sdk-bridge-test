@@ -1,5 +1,7 @@
+#include "camera_control.h"
 #include "gimbal_control.h"
 #include "hal_uart.h"
+#include "hal_usb_bulk.h"
 #include "telemetry.h"
 
 #include "dji_core.h"
@@ -66,6 +68,13 @@ static T_DjiReturnCode RegisterPlatformHandlers(void)
         .Rename = Osal_Rename,
         .Stat = Osal_Stat,
     };
+    T_DjiHalUsbBulkHandler usbBulkHandler = {
+        .UsbBulkInit = HalUsbBulk_Init,
+        .UsbBulkDeInit = HalUsbBulk_DeInit,
+        .UsbBulkWriteData = HalUsbBulk_WriteData,
+        .UsbBulkReadData = HalUsbBulk_ReadData,
+        .UsbBulkGetDeviceInfo = HalUsbBulk_GetDeviceInfo,
+    };
     T_DjiLoggerConsole console = {
         .func = PrintConsole,
         .consoleLevel = DJI_LOGGER_CONSOLE_LOG_LEVEL_INFO,
@@ -82,6 +91,10 @@ static T_DjiReturnCode RegisterPlatformHandlers(void)
         return returnCode;
     }
     returnCode = DjiPlatform_RegFileSystemHandler(&fileSystemHandler);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        return returnCode;
+    }
+    returnCode = DjiPlatform_RegHalUsbBulkHandler(&usbBulkHandler);
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
         return returnCode;
     }
@@ -136,10 +149,22 @@ int main(int argc, char **argv)
                argc == 2 &&
                strcmp(argv[1], "--gimbal-console") == 0) {
         returnCode = DjiRpi_RunGimbalConsole();
+    } else if (returnCode == DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS &&
+               argc == 2 &&
+               strcmp(argv[1], "--shoot-photo") == 0) {
+        returnCode = DjiRpi_ShootSinglePhoto();
+    } else if (returnCode == DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS &&
+               argc == 3 &&
+               strcmp(argv[1], "--shoot-download") == 0) {
+        returnCode = DjiRpi_ShootAndDownloadPhoto(argv[2]);
     } else if (returnCode == DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS && argc == 1) {
         returnCode = DjiRpi_RunTelemetry();
     } else if (returnCode == DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        fprintf(stderr, "Usage: %s [--gimbal-pitch DEGREES | --gimbal-console]\n", argv[0]);
+        fprintf(
+            stderr,
+            "Usage: %s [--gimbal-pitch DEGREES | --gimbal-console | "
+            "--shoot-photo | --shoot-download DIR]\n",
+            argv[0]);
         returnCode = DJI_ERROR_SYSTEM_MODULE_CODE_INVALID_PARAMETER;
     }
 

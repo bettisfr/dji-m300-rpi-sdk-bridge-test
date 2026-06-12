@@ -2,4 +2,7 @@
 .build/
 .cache/
 config/app.env
-
+photos/
+yolo-benchmark/
+*.pt
+__pycache__/
