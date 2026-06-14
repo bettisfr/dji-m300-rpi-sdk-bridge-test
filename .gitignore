@@ -3,6 +3,7 @@
 .cache/
 config/app.env
 photos/
+inference/
 yolo-benchmark/
 *.pt
 __pycache__/

@@ -139,6 +139,52 @@ T_DjiReturnCode DjiRpi_SetGimbalPitch(float targetPitchDegrees)
     return returnCode;
 }
 
+T_DjiReturnCode DjiRpi_MoveGimbalRelative(
+    float pitchDegrees,
+    float yawDegrees)
+{
+    T_DjiOsalHandler *osalHandler = DjiPlatform_GetOsalHandler();
+    T_DjiFcSubscriptionGimbalAngles before = {0};
+    T_DjiFcSubscriptionGimbalAngles after = {0};
+    T_DjiGimbalManagerRotation rotation = {
+        .rotationMode = DJI_GIMBAL_ROTATION_MODE_RELATIVE_ANGLE,
+        .pitch = pitchDegrees,
+        .roll = 0.0f,
+        .yaw = yawDegrees,
+        .time = 2.0,
+    };
+    T_DjiReturnCode returnCode;
+
+    if (pitchDegrees < -90.0f || pitchDegrees > 90.0f ||
+        yawDegrees < -90.0f || yawDegrees > 90.0f) {
+        return DJI_ERROR_SYSTEM_MODULE_CODE_INVALID_PARAMETER;
+    }
+
+    returnCode = InitGimbalControl();
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        return returnCode;
+    }
+
+    returnCode = ReadGimbalAngles(&before);
+    if (returnCode == DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        PrintGimbalAngles("Gimbal before", &before);
+    }
+
+    returnCode = DjiGimbalManager_Rotate(GIMBAL_MOUNT_POSITION, rotation);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        DeInitGimbalControl();
+        return returnCode;
+    }
+
+    osalHandler->TaskSleepMs(2300);
+    returnCode = ReadGimbalAngles(&after);
+    if (returnCode == DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        PrintGimbalAngles("Gimbal after", &after);
+    }
+    DeInitGimbalControl();
+    return returnCode;
+}
+
 T_DjiReturnCode DjiRpi_RunGimbalConsole(void)
 {
     T_DjiOsalHandler *osalHandler = DjiPlatform_GetOsalHandler();

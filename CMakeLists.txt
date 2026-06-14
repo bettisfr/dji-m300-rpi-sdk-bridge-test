@@ -25,6 +25,7 @@ add_executable(dji_rpi_telemetry
     src/camera_control.c
     src/main.c
     src/gimbal_control.c
+    src/mop_server.c
     src/telemetry.c
     src/hal_uart.c
     src/hal_usb_bulk.c

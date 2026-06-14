@@ -5,7 +5,8 @@ Minimal application for:
 - reading DJI Matrice 300 RTK telemetry;
 - controlling a Zenmuse H20 gimbal;
 - taking and downloading H20 photos;
-- benchmarking YOLO inference on the downloaded images.
+- benchmarking YOLO inference on the downloaded images;
+- receiving commands from an MSDK Android application through MOP.
 
 Verified hardware and software:
 
@@ -217,6 +218,228 @@ Measured Raspberry Pi 5 CPU performance:
 These times exclude model loading and warm-up. The test used four PyTorch
 threads and completed without throttling.
 
+## MSDK to PSDK Commands
+
+The Raspberry Pi can expose a MOP command server to an Android MSDK
+application:
+
+```bash
+sudo ./scripts/run_mop_server.sh
+```
+
+The tested configuration is:
+
+```text
+MOP channel:       49152
+MSDK device type:  ONBOARD
+MSDK transmission: STABLE
+PSDK transmission: RELIABLE
+```
+
+Supported commands:
+
+```text
+PING
+GIMBAL_YAW -10
+GIMBAL_YAW 10
+GIMBAL_PITCH -10
+GIMBAL_PITCH 10
+INFER
+INFER_STATUS
+```
+
+`INFER` runs YOLO11n on the newest JPEG in `photos/`. The annotated image is
+written to:
+
+```text
+inference/latest-annotated.jpg
+```
+
+The server immediately replies with `ACCEPTED INFER`, performs the inference
+in a worker thread, and remains available for `INFER_STATUS` polling. The final
+response contains the detection count, detected classes, inference time, total
+time, input filename, and output filename.
+
+Example:
+
+```text
+RESULT OK detections=0 classes=none inference_ms=314.5 total_ms=905.1 \
+image=DJI_20260611162037_0004_Z.JPG output=latest-annotated.jpg
+```
+
+The Android test screen provides Connect, Ping, Infer, and relative gimbal
+buttons. Its log automatically scrolls. Closing and reopening the Activity in
+the same Android process is supported: an already registered MSDK instance is
+detected through `SDKManager.isRegistered()`.
+
+### MSDK Java Example
+
+Initialize and connect a reliable request/response pipeline:
+
+```java
+private static final int MOP_CHANNEL_ID = 49152;
+
+private final ExecutorService mopExecutor =
+        Executors.newSingleThreadExecutor();
+
+private IPipelineManager pipelineManager;
+private volatile Pipeline pipeline;
+
+private void connectMop() {
+    pipelineManager = PipelineManager.getInstance();
+    pipelineManager.init();
+    pipelineManager.addPipelineConnectionListener(pipelines ->
+            pipeline = pipelines.get(MOP_CHANNEL_ID));
+
+    mopExecutor.execute(() -> {
+        IDJIError error = pipelineManager.connectPipeline(
+                MOP_CHANNEL_ID,
+                PipelineDeviceType.ONBOARD,
+                TransmissionControlType.STABLE);
+        if (error != null) {
+            Log.e("MOP", "Connection failed: " + error.description());
+        }
+    });
+}
+```
+
+Use one executor for the complete write/read exchange. Do not perform a write
+on one thread and its corresponding read on another thread:
+
+```java
+private String exchangeMopCommand(String command) {
+    Pipeline currentPipeline = pipeline;
+    if (currentPipeline == null) {
+        throw new IllegalStateException("MOP is not connected");
+    }
+
+    byte[] request = (command + "\n").getBytes(StandardCharsets.UTF_8);
+    DataResult writeResult = currentPipeline.writeData(request);
+    if (writeResult.getError() != null) {
+        throw new IllegalStateException(
+                "MOP write failed: " + writeResult.getError().description());
+    }
+
+    byte[] responseBuffer = new byte[4096];
+    DataResult readResult = currentPipeline.readData(responseBuffer);
+    if (readResult.getError() != null) {
+        throw new IllegalStateException(
+                "MOP read failed: " + readResult.getError().description());
+    }
+
+    return new String(
+            responseBuffer,
+            0,
+            readResult.getLength(),
+            StandardCharsets.UTF_8).trim();
+}
+```
+
+Simple asynchronous commands:
+
+```java
+mopExecutor.execute(() -> {
+    String pong = exchangeMopCommand("PING");
+    Log.i("MOP", "Response: " + pong);
+});
+
+mopExecutor.execute(() ->
+        exchangeMopCommand("GIMBAL_PITCH -10"));
+```
+
+Start an inference without blocking the Android UI or the MSDK mission logic,
+then poll until the Raspberry Pi returns the result:
+
+```java
+public void requestInference(Consumer<String> onResult) {
+    mopExecutor.execute(() -> {
+        String response = exchangeMopCommand("INFER");
+        if (!"ACCEPTED INFER".equals(response)) {
+            onResult.accept(response); // For example: BUSY INFER
+            return;
+        }
+
+        for (int attempt = 0; attempt < 40; attempt++) {
+            try {
+                Thread.sleep(750);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                onResult.accept("RESULT ERROR interrupted");
+                return;
+            }
+
+            String status = exchangeMopCommand("INFER_STATUS");
+            if (status.startsWith("RESULT ")) {
+                onResult.accept(status);
+                return;
+            }
+        }
+
+        onResult.accept("RESULT ERROR timeout");
+    });
+}
+```
+
+For example, a waypoint callback can enqueue the inference after the camera
+reports that the photo was captured:
+
+```java
+requestInference(result ->
+        runOnUiThread(() -> inferenceStatusView.setText(result)));
+```
+
+Disconnect when the owning Android component is destroyed:
+
+```java
+private void disconnectMop() {
+    if (pipelineManager != null) {
+        pipelineManager.disconnectPipeline(
+                MOP_CHANNEL_ID,
+                PipelineDeviceType.ONBOARD,
+                TransmissionControlType.STABLE);
+        pipelineManager.destroy();
+    }
+    pipeline = null;
+    mopExecutor.shutdownNow();
+}
+```
+
+The complete tested implementation is in
+`MopTestActivity.java` in the `uav-monitor` repository.
+
+### Concurrency Model
+
+The MSDK application and the aircraft mission can continue operating while the
+Raspberry Pi performs an inference. MOP I/O runs outside the Android UI thread,
+and YOLO runs in a separate Raspberry Pi worker thread.
+
+The current command implementation is intentionally serialized:
+
+- Android uses one `ExecutorService` worker for all MOP request/response
+  exchanges;
+- the Raspberry Pi MOP loop handles one connected client and one command at a
+  time;
+- only one YOLO inference can be active;
+- a second `INFER` received while one is running returns `BUSY INFER`;
+- gimbal commands acknowledge first, then execute synchronously in the MOP
+  command loop.
+
+Therefore, sending N calls does not create N independent inference threads.
+Calls from the test Activity are queued and processed in order. This avoids
+concurrent access to the MOP pipeline and prevents multiple YOLO processes from
+competing for Raspberry Pi memory and CPU.
+
+For a production mission, use asynchronous job semantics:
+
+1. MSDK sends a command containing a unique job ID and image identifier.
+2. PSDK acknowledges and places the job in a bounded queue.
+3. One or more explicitly configured workers process queued jobs.
+4. MSDK polls job status or receives results on a dedicated result channel.
+
+Do not add arbitrary parallel `writeData`/`readData` calls to the same MOP
+pipeline. The current text protocol has no request IDs, so concurrent exchanges
+could associate a response with the wrong request.
+
 ## Troubleshooting
 
 `DjiCore_Init` cannot identify the aircraft:
@@ -239,6 +462,12 @@ Photo download cannot open the USB Bulk device:
 - rebuild after running `scripts/setup.sh`;
 - run `sudo ./scripts/shoot_and_download.sh`.
 
+The Android application works on first launch but not after reopening:
+
+- use the current `MopTestActivity`, which checks `SDKManager.isRegistered()`;
+- disconnect and destroy the MOP pipeline from `Activity.onDestroy()`;
+- keep the Raspberry Pi MOP server running while reopening the Activity.
+
 PSDK 3.9.2 can emit message-queue errors during `DjiCore_DeInit()`. The CLI
 avoids that defective shutdown path and lets Linux release resources at process
 exit.
@@ -246,7 +475,7 @@ exit.
 ## Project Layout
 
 ```text
-src/       C application, DJI transports, telemetry, gimbal, and camera
-scripts/   setup, build, launchers, and YOLO benchmark
+src/       C application, transports, telemetry, gimbal, camera, and MOP server
+scripts/   setup, build, launchers, YOLO benchmark, and single-image inference
 config/    private DJI application configuration template
 ```

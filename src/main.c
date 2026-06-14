@@ -2,6 +2,7 @@
 #include "gimbal_control.h"
 #include "hal_uart.h"
 #include "hal_usb_bulk.h"
+#include "mop_server.h"
 #include "telemetry.h"
 
 #include "dji_core.h"
@@ -157,13 +158,17 @@ int main(int argc, char **argv)
                argc == 3 &&
                strcmp(argv[1], "--shoot-download") == 0) {
         returnCode = DjiRpi_ShootAndDownloadPhoto(argv[2]);
+    } else if (returnCode == DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS &&
+               argc == 2 &&
+               strcmp(argv[1], "--mop-server") == 0) {
+        returnCode = DjiRpi_RunMopServer();
     } else if (returnCode == DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS && argc == 1) {
         returnCode = DjiRpi_RunTelemetry();
     } else if (returnCode == DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
         fprintf(
             stderr,
             "Usage: %s [--gimbal-pitch DEGREES | --gimbal-console | "
-            "--shoot-photo | --shoot-download DIR]\n",
+            "--shoot-photo | --shoot-download DIR | --mop-server]\n",
             argv[0]);
         returnCode = DJI_ERROR_SYSTEM_MODULE_CODE_INVALID_PARAMETER;
     }
