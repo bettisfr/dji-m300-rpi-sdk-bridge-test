@@ -18,7 +18,7 @@
 
 static T_DjiReturnCode PrintConsole(const uint8_t *data, uint16_t dataLen)
 {
-    return fwrite(data, 1, dataLen, stdout) == dataLen
+    return fwrite(data, 1, dataLen, stderr) == dataLen
                ? DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS
                : DJI_ERROR_SYSTEM_MODULE_CODE_SYSTEM_ERROR;
 }

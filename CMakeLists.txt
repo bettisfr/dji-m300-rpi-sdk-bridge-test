@@ -26,7 +26,7 @@ add_executable(dji_rpi_telemetry
     src/main.c
     src/gimbal_control.c
     src/mop_server.c
-    src/telemetry.c
+    src/drone_telemetry_10hz.c
     src/hal_uart.c
     src/hal_usb_bulk.c
     "${DJI_LINUX_COMMON}/osal/osal.c"
