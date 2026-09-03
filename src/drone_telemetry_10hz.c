@@ -55,17 +55,6 @@ static T_AttitudeDeg QuaternionToAttitude(const T_DjiFcSubscriptionQuaternion *q
     return attitude;
 }
 
-static double NormalizeDegrees(double angleDeg)
-{
-    while (angleDeg < 0.0) {
-        angleDeg += 360.0;
-    }
-    while (angleDeg >= 360.0) {
-        angleDeg -= 360.0;
-    }
-    return angleDeg;
-}
-
 static T_DjiReturnCode Subscribe(E_DjiFcSubscriptionTopic topic, E_DjiDataSubscriptionTopicFreq frequency)
 {
     return DjiFcSubscription_SubscribeTopic(topic, frequency, NULL);
@@ -81,10 +70,8 @@ T_DjiReturnCode DjiRpi_RunTelemetry(void)
     T_DjiFcSubscriptionHeightFusion heightFusion = 0;
     T_DjiFcSubscriptionRtkPositionInfo rtkStatus = 0;
     T_DjiFcSubscriptionRtkYaw rtkYaw = 0;
-    T_DjiFcSubscriptionRtkYawInfo rtkYawStatus = 0;
     T_DjiDataTimestamp timestamp = {0};
     T_AttitudeDeg attitude;
-    char headingDeg[16];
     uint32_t lastTimestampMs = 0;
     T_DjiReturnCode returnCode;
 
@@ -115,10 +102,8 @@ T_DjiReturnCode DjiRpi_RunTelemetry(void)
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) goto cleanup;
     returnCode = Subscribe(DJI_FC_SUBSCRIPTION_TOPIC_RTK_YAW, DJI_DATA_SUBSCRIPTION_TOPIC_1_HZ);
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) goto cleanup;
-    returnCode = Subscribe(DJI_FC_SUBSCRIPTION_TOPIC_RTK_YAW_INFO, DJI_DATA_SUBSCRIPTION_TOPIC_1_HZ);
-    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) goto cleanup;
     printf(
-        "fc_timestamp_ms,drone_model,firmware,roll_deg,pitch_deg,yaw_deg,heading_deg,rtk_yaw_deg,rtk_yaw_status,"
+        "fc_timestamp_ms,drone_model,firmware,roll_deg,pitch_deg,yaw_deg,rtk_yaw_deg,"
         "fused_lat_deg,fused_lon_deg,fused_alt_m,height_fusion_m,"
         "rtk_lat_deg,rtk_lon_deg,rtk_h_m,rtk_status\n");
     fflush(stdout);
@@ -143,16 +128,9 @@ T_DjiReturnCode DjiRpi_RunTelemetry(void)
             DJI_FC_SUBSCRIPTION_TOPIC_RTK_POSITION_INFO, (uint8_t *) &rtkStatus, sizeof(rtkStatus), NULL);
         DjiFcSubscription_GetLatestValueOfTopic(
             DJI_FC_SUBSCRIPTION_TOPIC_RTK_YAW, (uint8_t *) &rtkYaw, sizeof(rtkYaw), NULL);
-        DjiFcSubscription_GetLatestValueOfTopic(
-            DJI_FC_SUBSCRIPTION_TOPIC_RTK_YAW_INFO, (uint8_t *) &rtkYawStatus, sizeof(rtkYawStatus), NULL);
         attitude = QuaternionToAttitude(&quaternion);
-        if (rtkYawStatus == 50) {
-            snprintf(headingDeg, sizeof(headingDeg), "%.1f", NormalizeDegrees((double) rtkYaw - 90.0));
-        } else {
-            headingDeg[0] = '\0';
-        }
         printf(
-            "%u,\"%s\",\"%s\",%.1f,%.1f,%.1f,%s,%d,%u,%.8f,%.8f,%.3f,%.3f,"
+            "%u,\"%s\",\"%s\",%.1f,%.1f,%.1f,%d,%.8f,%.8f,%.3f,%.3f,"
             "%.8f,%.8f,%.3f,%u\n",
             timestamp.millisecond,
             AircraftTypeName(aircraftInfo.aircraftType),
@@ -160,9 +138,7 @@ T_DjiReturnCode DjiRpi_RunTelemetry(void)
             attitude.rollDeg,
             attitude.pitchDeg,
             attitude.yawDeg,
-            headingDeg,
             rtkYaw,
-            rtkYawStatus,
             fusedPosition.latitude * 180.0 / M_PI,
             fusedPosition.longitude * 180.0 / M_PI,
             fusedPosition.altitude,
@@ -181,7 +157,6 @@ cleanup:
     DjiFcSubscription_UnSubscribeTopic(DJI_FC_SUBSCRIPTION_TOPIC_RTK_POSITION);
     DjiFcSubscription_UnSubscribeTopic(DJI_FC_SUBSCRIPTION_TOPIC_RTK_POSITION_INFO);
     DjiFcSubscription_UnSubscribeTopic(DJI_FC_SUBSCRIPTION_TOPIC_RTK_YAW);
-    DjiFcSubscription_UnSubscribeTopic(DJI_FC_SUBSCRIPTION_TOPIC_RTK_YAW_INFO);
     DjiFcSubscription_DeInit();
     return returnCode;
 }
