@@ -1,4 +1,4 @@
-# DJI M300 RTK on Raspberry Pi 5
+# DJI M300 Raspberry Pi SDK Bridge Test
 
 Minimal application for:
 
@@ -85,7 +85,7 @@ Log out and back in after changing groups.
 Install dependencies:
 
 ```bash
-cd ~/dji-rpi
+cd ~/dji-m300-rpi-sdk-bridge-test
 ./scripts/setup.sh
 ```
 
@@ -168,7 +168,7 @@ sudo ./scripts/shoot_and_download.sh
 The default output directory is:
 
 ```text
-~/dji-rpi/photos/
+~/dji-m300-rpi-sdk-bridge-test/photos/
 ```
 
 Pass a different destination as the first argument:
